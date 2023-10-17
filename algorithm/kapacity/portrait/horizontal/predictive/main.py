@@ -12,21 +12,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+
 import argparse
+import datetime
 import json
 import os
-import datetime
-import pandas as pd
+import sys
 
 import grpc
-from kubernetes import client, config, utils
+import pandas as pd
 from google.protobuf import timestamp_pb2, duration_pb2
+from kubernetes import client, config, utils
 
-import kapacity.portrait.horizontal.predictive.replicas_estimator as estimator
-import kapacity.timeseries.forecasting.forecaster as forecaster
-import kapacity.portrait.horizontal.predictive.metrics.metric_pb2 as metric_pb
-import kapacity.portrait.horizontal.predictive.metrics.provider_pb2 as provider_pb
-import kapacity.portrait.horizontal.predictive.metrics.provider_pb2_grpc as provider_pb_grpc
+import metrics.metric_pb2 as metric_pb
+import metrics.provider_pb2 as provider_pb
+import metrics.provider_pb2_grpc as provider_pb_grpc
+import replicas_estimator as estimator
+
+sys.path.append(os.path.split(os.path.abspath(__file__))[0].rsplit('/', 3)[0])
+from timeseries.forecasting import forecaster
 
 
 class EnvInfo:
@@ -312,7 +316,8 @@ def fetch_resource_metric_history(args, namespace, metric, scale_target, start, 
     workload_resource = metric_pb.WorkloadResourceQuery(group_kind=group_kind,
                                                         namespace=namespace,
                                                         name=name,
-                                                        resource_name=resource_name)
+                                                        resource_name=resource_name,
+                                                        ready_pods_only=True)
     query = metric_pb.Query(type=metric_pb.WORKLOAD_RESOURCE,
                             workload_resource=workload_resource)
     return query_metrics(args=args, query=query, start=start, end=end)
@@ -327,7 +332,8 @@ def fetch_container_resource_metric_history(args, namespace, metric, scale_targe
                                                                            namespace=namespace,
                                                                            name=name,
                                                                            resource_name=resource_name,
-                                                                           container_name=container_name)
+                                                                           container_name=container_name,
+                                                                           ready_pods_only=True)
     query = metric_pb.Query(type=metric_pb.WORKLOAD_CONTAINER_RESOURCE,
                             workload_container_resource=workload_container_resource)
     return query_metrics(args=args, query=query, start=start, end=end)
@@ -440,7 +446,8 @@ def write_pred_replicas_to_config_map(args, env, hp_cr, pred_replicas):
     last_timestamp = pred_replicas.iloc[len(pred_replicas) - 1, 0]
     content = pred_replicas.set_index('timestamp', drop=True).to_dict()['pred_replicas']
     expire_time = parse_timestamp_to_rfc3339(
-        datetime.datetime.utcfromtimestamp(last_timestamp) + datetime.timedelta(minutes=time_period_to_minutes(args.scaling_freq)))
+        datetime.datetime.utcfromtimestamp(last_timestamp) + datetime.timedelta(
+            minutes=time_period_to_minutes(args.scaling_freq)))
     cmap_namespace = env.namespace
     cmap_name = env.hp_name + '-result'
 
